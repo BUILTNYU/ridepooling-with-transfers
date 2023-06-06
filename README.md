@@ -1,6 +1,6 @@
 # ridepooling-with-transfers
 
-This project is a dynamic ride-pooling simulator which allows passengers to transfer between vehicles. It uses a proposed two-deminesional non-myopic cost function approximation policy to make sequential decisions and find the best matches between riders and vehicles in the system. The project is in collaboration with MOIA, a ride-pooling service operating in Germany. 
+This project is a dynamic ride-pooling simulator which allows passengers to transfer between vehicles. It uses a proposed two-deminesional non-myopic cost function approximation policy to make sequential decisions and find the best matches between riders and vehicles in the system. The project is in collaboration with [MOIA](https://www.moia.io), a ride-pooling service operating in Germany. 
 
 ![image](https://github.com/BUILTNYU/ridepooling-with-transfers/assets/66441622/34b8a899-b16e-42d7-a809-5ce25cdc99e3)
 
