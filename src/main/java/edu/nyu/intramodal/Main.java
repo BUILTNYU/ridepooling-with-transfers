@@ -70,6 +70,10 @@ public class Main {
                     boolean use_hubs = false;
                     int simulation_start_time = 0 * 3600;
                     String network_name = "SiouxFalls";
+                    String requests_source_crs = "EPSG:4326"; //EPSG:4326 is equivalent to WGS84
+                    String requests_destination_crs = "EPSG:25832"; //EPSG:25832 is New York projected coordinate system in meters
+                    String hubs_source_crs = "EPSG:4326"; //EPSG:4326 is equivalent to WGS84
+                    String hubs_destination_crs = "EPSG:25832"; //EPSG:25832 is New York projected coordinate system in meters
 
                     //transfer parameters
                     int transfer_max_dist_t = 10 * 60; //maximum distance in terms of time to find candidate transfer nodes between two vehicles
@@ -119,8 +123,8 @@ public class Main {
                             System.out.println("reading stops");
                             Reader.read_stops(stop_ids, nodes, stops, "Hamburg_stops_v2.csv");
                             System.out.println("reading requests");
-                            Reader.read_requests(requests, stops, network, "requests_nyu_v2.csv", max_wait_t, max_tt_p, max_tt_min,
-                                    max_tt_added);
+                            Reader.read_requests(requests, stops, network, "requests_nyu_v2.csv", max_wait_t,
+                                    max_tt_p, max_tt_min, max_tt_added, requests_source_crs, requests_destination_crs);
                             n_requests = requests.size();
                         } catch (IOException e) {
                             e.printStackTrace();
@@ -151,7 +155,8 @@ public class Main {
                     // INITIALIZE VEHICLE LOCATIONS
                     System.out.println("initializing vehicles location");
                     if (use_hubs && network_name.equals("Hamburg")) {
-                        Reader.read_hub_locations(hub_locations, stops, "Hamburg_hubLocations.csv");
+                        Reader.read_hub_locations(hub_locations, stops, "Hamburg_hubLocations.csv",
+                                hubs_source_crs, hubs_destination_crs);
                     }
                     System.out.println("hub locations size: " + hub_locations.size());
 //                    for (int i: hub_locations){

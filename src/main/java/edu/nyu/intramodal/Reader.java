@@ -99,8 +99,9 @@ public class Reader {
         }
     }
 
-    public static void read_requests (HashMap<Integer, Request> requests, HashMap<Integer, Node> stops, Network network, String filename,
-                                      int max_wait_t, float max_tt_p, int max_tt_min, int max_tt_add) throws IOException {
+    public static void read_requests (HashMap<Integer, Request> requests, HashMap<Integer, Node> stops, Network network,
+                                      String filename, int max_wait_t, float max_tt_p, int max_tt_min, int max_tt_add,
+                                      String sourceCrs, String destinationCrs) throws IOException {
 
         //csv data structure: origin lng - origin lat - dest lng - dest lat - submission time
         BufferedReader br = new BufferedReader(new FileReader(filename));
@@ -116,8 +117,8 @@ public class Reader {
             Integer origin_stop_id = null;
             Integer dest_stop_id = null;
 
-            ProjCoordinate origin = convert_coordinates(Double.parseDouble(line_data[0]), Double.parseDouble(line_data[1]));
-            ProjCoordinate dest = convert_coordinates(Double.parseDouble(line_data[2]), Double.parseDouble(line_data[3]));
+            ProjCoordinate origin = convert_coordinates(Double.parseDouble(line_data[0]), Double.parseDouble(line_data[1]), sourceCrs, destinationCrs);
+            ProjCoordinate dest = convert_coordinates(Double.parseDouble(line_data[2]), Double.parseDouble(line_data[3]), sourceCrs, destinationCrs);
 
             origin_stop = find_nearest_node(stops, origin.x, origin.y);
             dest_stop = find_nearest_node(stops, dest.x, dest.y);
@@ -151,7 +152,8 @@ public class Reader {
         }
     }
 
-    public static void read_hub_locations (ArrayList<Integer> hub_locations, HashMap<Integer, Node> stops, String filename) throws IOException {
+    public static void read_hub_locations (ArrayList<Integer> hub_locations, HashMap<Integer, Node> stops, String filename,
+                                           String source_crs, String destination_crs) throws IOException {
         //csv data structure: hub lng - hub lat
         BufferedReader br = new BufferedReader(new FileReader(filename));
         String line;
@@ -162,7 +164,8 @@ public class Reader {
             String[] line_data = line.split(",");
             HashMap<Integer, double[]> hub_stop;
 
-            ProjCoordinate hub = convert_coordinates(Double.parseDouble(line_data[0]), Double.parseDouble(line_data[1]));
+            ProjCoordinate hub = convert_coordinates(Double.parseDouble(line_data[0]), Double.parseDouble(line_data[1]),
+                    source_crs, destination_crs);
 
             hub_stop = find_nearest_node(stops, hub.x, hub.y);
 
@@ -179,13 +182,14 @@ public class Reader {
         return distance;
     }
 
-    public static ProjCoordinate convert_coordinates (double lng, double lat) {
-        //converting coordinates to EPSG:4326
+    public static ProjCoordinate convert_coordinates (double lng, double lat, String sourceCrs, String destinationCrs) {
+        //converting coordinates
         CRSFactory factory = new CRSFactory();
-        CoordinateReferenceSystem srcCrs = factory.createFromName("EPSG:4326"); //it's equivalent to WGS84
-        CoordinateReferenceSystem dstCrs = factory.createFromName("EPSG:25832");
+        CoordinateReferenceSystem srcCrs = factory.createFromName(sourceCrs);
+        CoordinateReferenceSystem dstCrs = factory.createFromName(destinationCrs);
 
         BasicCoordinateTransform transform = new BasicCoordinateTransform(srcCrs, dstCrs);
+
 
         // Note these are x, y so lng, lat
         ProjCoordinate srcCoord = new ProjCoordinate(lng, lat);
