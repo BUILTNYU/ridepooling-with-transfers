@@ -46,6 +46,20 @@ public class Main {
 
                     long start_time = System.nanoTime();
 
+                    //FILENAMES
+                    String network_filename = "SiouxFalls_network.csv";
+                    String nodes_filename = "SiouxFalls_nodes.csv";
+                    String links_filename = "SiouxFalls_links.csv";
+                    String requests_filename = "";
+                    String stops_filename = "";
+                    String hubs_filename = "";
+                    String transferStops_filename = "";
+
+                    //SETTINGS
+                    boolean use_hubs = false;
+                    boolean use_stop_ids = true;
+                    boolean create_requests = true;
+
                     //PARAMETERS
                     int simulation_period = 24 * 3600; //seconds
                     int t_step = 30; //time step in terms of seconds
@@ -67,9 +81,7 @@ public class Main {
                     float delta = 0.0f;
                     float rho = 0.0f;
 //                long seed = 4; //random seed
-                    boolean use_hubs = false;
                     int simulation_start_time = 0 * 3600;
-                    String network_name = "SiouxFalls";
                     String requests_source_crs = "EPSG:4326"; //EPSG:4326 is equivalent to WGS84
                     String requests_destination_crs = "EPSG:25832"; //EPSG:25832 is New York projected coordinate system in meters
                     String hubs_source_crs = "EPSG:4326"; //EPSG:4326 is equivalent to WGS84
@@ -84,7 +96,7 @@ public class Main {
                     int n_firstV_cands = 0; //if zero, it means transfers are disabled
                     int n_active_transfers = 0;
                     boolean use_best_v = false;
-                    boolean create_transfers = true;
+                    boolean create_transfer_stops = true;
                     System.out.println("transfer ratio: " + n_transfers_ratio);
 
                     HashMap<Integer, Vehicle> vehicles = new HashMap<>();
@@ -97,43 +109,33 @@ public class Main {
                     ArrayList<Integer> stop_ids = new ArrayList<>();
                     ArrayList<Integer> transfer_ids = new ArrayList<>();
                     ArrayList<Integer> hub_locations = new ArrayList<>();
+                    stop_ids = new ArrayList<>(Arrays.asList(2, 5, 9, 12, 13, 17, 21, 23));
+//                    stop_ids = new ArrayList<>(Arrays.asList(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23));
 
-                    //For Sioux Falls network
-                    if (network_name.equals("SiouxFalls")) {
-                        stop_ids = new ArrayList<>(Arrays.asList(2, 5, 9, 12, 13, 17, 21, 23));
-//        stop_ids = new ArrayList<>(Arrays.asList(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23));
-
-                        //CREATE NETWORK AND REQUESTS
-                        try {
-                            Reader.read_network(network, "SiouxFalls_network.csv");
-                            Reader.read_nodes(nodes, "SiouxFalls_nodes.csv");
-                            create_requests(n_requests, requests, stop_ids, simulation_period, network, max_wait_t, max_tt_p, max_tt_min, max_tt_added, seed);
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-
-                    // for Hamburg network
-                    else if (network_name.equals("Hamburg")) {
                         try {
                             System.out.println("reading network");
-                            Reader.read_network(network, "Hamburg_network.csv");
+                            Reader.read_network(network, network_filename);
                             System.out.println("reading nodes");
-                            Reader.read_nodes(nodes, "Hamburg_nodes.csv");
+                            Reader.read_nodes(nodes, nodes_filename);
                             System.out.println("reading stops");
-                            Reader.read_stops(stop_ids, nodes, stops, "Hamburg_stops_v2.csv");
+                            if (use_stop_ids == false) {
+                                Reader.read_stops(stop_ids, nodes, stops, stops_filename);
+                            }
                             System.out.println("reading requests");
-                            Reader.read_requests(requests, stops, network, "requests_nyu_v2.csv", max_wait_t,
-                                    max_tt_p, max_tt_min, max_tt_added, requests_source_crs, requests_destination_crs);
+                            if (create_requests){
+                                create_requests(n_requests, requests, stop_ids, simulation_period, network, max_wait_t, max_tt_p, max_tt_min, max_tt_added, seed);
+                            } else {
+                                Reader.read_requests(requests, stops, network, requests_filename, max_wait_t,
+                                        max_tt_p, max_tt_min, max_tt_added, requests_source_crs, requests_destination_crs);
+                            }
                             n_requests = requests.size();
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
-                    }
 
                     //create a graph for shortest path calculation
                     DirectedGraph graph = new DirectedGraph();
-                    create_graph(network_name + "_" + "links.csv", n_nodes, graph);
+                    create_graph(links_filename, n_nodes, graph);
 
                     System.out.println("number of nodes in the network: " + nodes.size());
                     System.out.println("number of stops in the network: " + stop_ids.size());
@@ -141,10 +143,10 @@ public class Main {
 
                     //CREATE TRANSFER NODES
                     System.out.println("creating transfer nodes");
-                    if (create_transfers) {
+                    if (create_transfer_stops) {
                         create_transfer_nodes(stop_ids, n_transfers_ratio, transfer_ids, seed);
                     } else {
-                        Reader.read_transfers(transfer_ids, stops, "Hamburg_transferStops.csv");
+                        Reader.read_transfers(transfer_ids, stops, transferStops_filename);
                     }
 //                    System.out.println("number of transfer nodes: " + stop_ids.size());
                     System.out.println("number of transfer ids: " + transfer_ids.size());
@@ -154,8 +156,8 @@ public class Main {
 
                     // INITIALIZE VEHICLE LOCATIONS
                     System.out.println("initializing vehicles location");
-                    if (use_hubs && network_name.equals("Hamburg")) {
-                        Reader.read_hub_locations(hub_locations, stops, "Hamburg_hubLocations.csv",
+                    if (use_hubs) {
+                        Reader.read_hub_locations(hub_locations, stops, hubs_filename,
                                 hubs_source_crs, hubs_destination_crs);
                     }
                     System.out.println("hub locations size: " + hub_locations.size());
