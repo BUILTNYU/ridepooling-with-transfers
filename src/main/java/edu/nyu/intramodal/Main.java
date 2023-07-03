@@ -11,22 +11,99 @@ public class Main {
 
     public static void main(String[] args) throws CloneNotSupportedException, IOException {
 
-        String filename = "SiouxFalls_test";
+        //FILENAMES
+        String filename = "SiouxFalls_test"; //this name is used for generating outputs
+        String network_filename = "SiouxFalls_network.csv";
+        String nodes_filename = "SiouxFalls_nodes.csv";
+        String links_filename = "SiouxFalls_links.csv";
+        String requests_filename = "";
+        String stops_filename = "";
+        String hubs_filename = "";
+        String transferStops_filename = "";
+
+        //CONTROLS
+        boolean use_hubs = false;
+        boolean use_stop_ids = true;
+        boolean create_requests = true;
+        boolean write_occupancy_info = false;
+        boolean write_transfer_info = false;
+        boolean write_transfer_locations = false;
+        boolean write_requests_info = false;
+
+        //PARAMETERS
+        int simulation_period = 24 * 3600; //seconds
+        int simulation_start_time = 0 * 3600;
+        int t_step = 30; //time step in terms of seconds
+        int v_cap = 6; //vehicle capacity
+        int n_nodes = 24; //number of nodes in the network
+        int n_requests = 3000;
+//        int n_veh = 8; //number of vehicles in the network
+        int max_t_dist = 10 * 60; //maximum travel distance in terms of time unit (seconds) for finding candidate vehicles
+        int max_wait_t = 10 * 60; //maximum waiting time for passengers to be picked up
+        float max_tt_p = 0.4f; //a parameter for finding maximum travel time for each request, provided by MOIA
+        int max_tt_min = 10 * 60; //a parameter for finding maximum travel time for each request, provided by MOIA
+        int max_tt_added = 15 * 60; //a parameter for finding maximum travel time for each request, provided by MOIA - maximum travel time added to the direct travel time
+        int base_dwell_time = 50; //base dwell time at each stop (seconds)
+        int p_dwell_time = 10; //dwell time added to base dwell time for each passenger picked up or dropped off (seconds)
+        float theta = 0.5f; //a parameter of the cost function
+        float beta = 0.005f; //a parameter of the cost function
+        double big_M = Double.POSITIVE_INFINITY; //an arbitrary large value used in different functions
+//        float gamma = 0.0f;
+        float delta = 0.0f;
+        float rho = 0.0f;
+//        long seed = 4; //random seed
+        String requests_source_crs = "EPSG:4326"; //EPSG:4326 is equivalent to WGS84
+        String requests_destination_crs = "EPSG:25832"; //EPSG:25832 is New York projected coordinate system in meters
+        String hubs_source_crs = "EPSG:4326"; //EPSG:4326 is equivalent to WGS84
+        String hubs_destination_crs = "EPSG:25832"; //EPSG:25832 is New York projected coordinate system in meters
+
+        //transfer parameters
+        int transfer_max_dist_t = 10 * 60; //maximum distance in terms of time to find candidate transfer nodes between two vehicles
+        int transfer_max_wait_t = 10 * 60; //maximum waiting time at a transfer node
+        float n_transfers_ratio = 0.2f; //ratio of # of transfer nodes to # of stops
+        int n_transfer_1 = 0;
+        int n_transfer_2 = 0;
+        int n_firstV_cands = 0; //if zero, it means transfers are disabled
+        int n_active_transfers = 0;
+        boolean use_best_v = false;
+        boolean create_transfer_stops = true;
+        System.out.println("transfer ratio: " + n_transfers_ratio);
+
+        HashMap<Integer, Vehicle> vehicles = new HashMap<>();
+        HashMap<Integer, Request> requests = new HashMap<>();
+        Data data = new Data(new HashMap<>()); //used for storing simulation data
+        Network network = new Network(n_nodes);
+        HashMap<Integer, Node> nodes = new HashMap<>();
+        HashMap<Integer, Node> stops = new HashMap<>();
+        ArrayList<Float> avg_occ = new ArrayList<>(); //vehicles' average occupancy
+        ArrayList<Integer> stop_ids = new ArrayList<>();
+        ArrayList<Integer> transfer_ids = new ArrayList<>();
+        ArrayList<Integer> hub_locations = new ArrayList<>();
+        stop_ids = new ArrayList<>(Arrays.asList(2, 5, 9, 12, 13, 17, 21, 23));
+//        stop_ids = new ArrayList<>(Arrays.asList(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23));
+
+        //write performance evaluation results
         File file = new File(filename + ".csv");
         FileWriter outputfile = new FileWriter(file);
         CSVWriter writer = new CSVWriter(outputfile);
-        String[] header = {"seed", "simulation_period", "n_requests", "n_veh", "n_stops", "n_transfer_nodes", "theta", "beta", "gamma", "delta", "rho", "avg pax in-vehicle time (min)", "avg pax waiting time (min)", "avg pax travel time (min)", "vehicles idle time (hrs)", "avg vehicle occupancy", "# of pax served", "# of rejected or pending", "total traveled distance (hrs)", "avg traveled distance (min)", "total empty traveled distance (hrs)", "# of transfers", "run time"};
+        String[] header = {"seed", "simulation_period", "n_requests", "n_veh", "n_stops", "n_transfer_nodes", "theta",
+                "beta", "gamma", "delta", "rho", "avg pax in-vehicle time (min)", "avg pax waiting time (min)",
+                "avg pax travel time (min)", "vehicles idle time (hrs)", "avg vehicle occupancy", "# of pax served",
+                "# of rejected or pending", "total traveled distance (hrs)", "avg traveled distance (min)",
+                "total empty traveled distance (hrs)", "# of transfers", "run time"};
         writer.writeNext(header);
 
         for (int n_veh = 12; n_veh < 13; n_veh += 2) {
 
             for (float gamma = 0.0f; gamma < 0.000001; gamma += 0.0002) {
 
-                File file_tr = new File(filename + "_gamma" + gamma + "_transferInfo.csv");
-                FileWriter outputfile_tr = new FileWriter(file_tr);
-                CSVWriter writer_tr = new CSVWriter(outputfile_tr);
-                String[] header_tr = {"request_id", "submission_t", "pickup_t", "dropoff_t", "now", "status", "#cand_transfer_nodes", "v1_transfer_t", "v2_transfer_t"};
-                writer_tr.writeNext(header_tr);
+                //write transfer info
+                    File file_tr = new File(filename + "_gamma" + gamma + "_transferInfo.csv");
+                    FileWriter outputfile_tr = new FileWriter(file_tr);
+                    CSVWriter writer_tr = new CSVWriter(outputfile_tr);
+                    String[] header_tr = {"request_id", "submission_t", "pickup_t", "dropoff_t", "now", "status",
+                            "#cand_transfer_nodes", "v1_transfer_t", "v2_transfer_t"};
+                    writer_tr.writeNext(header_tr);
 
                 //data for occupancy plot
                 File file_occ = new File(filename + "_gamma" + gamma + "_occupancyInfo.csv");
@@ -37,101 +114,36 @@ public class Main {
 
                 for (int seed = 0; seed < 1; seed++) {
 
-                    //Finding transfer locations
-//                    File file2 = new File("transfer_locations_seed" + seed + "_gamma0.05.csv");
-//                    FileWriter outputfile2 = new FileWriter(file2);
-//                    CSVWriter writer2 = new CSVWriter(outputfile2);
-//                    String[] header2 = {"stop_id", "x", "y", "former_id"};
-//                    writer2.writeNext(header2);
+                    //finding transfer locations
+                    File file2 = new File("transfer_locations_seed" + seed + "_gamma" + gamma + ".csv");
+                    FileWriter outputfile2 = new FileWriter(file2);
+                    CSVWriter writer2 = new CSVWriter(outputfile2);
+                    String[] header2 = {"stop_id", "x", "y", "former_id"};
+                    writer2.writeNext(header2);
 
                     long start_time = System.nanoTime();
 
-                    //FILENAMES
-                    String network_filename = "SiouxFalls_network.csv";
-                    String nodes_filename = "SiouxFalls_nodes.csv";
-                    String links_filename = "SiouxFalls_links.csv";
-                    String requests_filename = "";
-                    String stops_filename = "";
-                    String hubs_filename = "";
-                    String transferStops_filename = "";
-
-                    //SETTINGS
-                    boolean use_hubs = false;
-                    boolean use_stop_ids = true;
-                    boolean create_requests = true;
-
-                    //PARAMETERS
-                    int simulation_period = 24 * 3600; //seconds
-                    int t_step = 30; //time step in terms of seconds
-                    int v_cap = 6; //vehicle capacity
-                    int n_nodes = 24; //number of nodes in the network
-                    int n_requests = 3000;
-//                int n_veh = 8; //number of vehicles in the network
-                    int max_t_dist = 10 * 60; //maximum travel distance in terms of time unit (seconds) for finding candidate vehicles
-                    int max_wait_t = 10 * 60; //maximum waiting time for passengers to be picked up
-                    float max_tt_p = 0.4f; //a parameter for finding maximum travel time for each request, provided by MOIA
-                    int max_tt_min = 10 * 60; //a parameter for finding maximum travel time for each request, provided by MOIA
-                    int max_tt_added = 15 * 60; //a parameter for finding maximum travel time for each request, provided by MOIA - maximum travel time added to the direct travel time
-                    int base_dwell_time = 50; //base dwell time at each stop (seconds)
-                    int p_dwell_time = 10; //dwell time added to base dwell time for each passenger picked up or dropped off (seconds)
-                    float theta = 0.5f; //a parameter of the cost function
-                    float beta = 0.005f; //a parameter of the cost function
-                    double big_M = Double.POSITIVE_INFINITY; //an arbitrary large value used in different functions
-//                    float gamma = 0.0f;
-                    float delta = 0.0f;
-                    float rho = 0.0f;
-//                long seed = 4; //random seed
-                    int simulation_start_time = 0 * 3600;
-                    String requests_source_crs = "EPSG:4326"; //EPSG:4326 is equivalent to WGS84
-                    String requests_destination_crs = "EPSG:25832"; //EPSG:25832 is New York projected coordinate system in meters
-                    String hubs_source_crs = "EPSG:4326"; //EPSG:4326 is equivalent to WGS84
-                    String hubs_destination_crs = "EPSG:25832"; //EPSG:25832 is New York projected coordinate system in meters
-
-                    //transfer parameters
-                    int transfer_max_dist_t = 10 * 60; //maximum distance in terms of time to find candidate transfer nodes between two vehicles
-                    int transfer_max_wait_t = 10 * 60; //maximum waiting time at a transfer node
-                    float n_transfers_ratio = 0.2f; //ratio of # of transfer nodes to # of stops
-                    int n_transfer_1 = 0;
-                    int n_transfer_2 = 0;
-                    int n_firstV_cands = 0; //if zero, it means transfers are disabled
-                    int n_active_transfers = 0;
-                    boolean use_best_v = false;
-                    boolean create_transfer_stops = true;
-                    System.out.println("transfer ratio: " + n_transfers_ratio);
-
-                    HashMap<Integer, Vehicle> vehicles = new HashMap<>();
-                    HashMap<Integer, Request> requests = new HashMap<>();
-                    Data data = new Data(new HashMap<>()); //used for storing simulation data
-                    Network network = new Network(n_nodes);
-                    HashMap<Integer, Node> nodes = new HashMap<>();
-                    HashMap<Integer, Node> stops = new HashMap<>();
-                    ArrayList<Float> avg_occ = new ArrayList<>(); //vehicles' average occupancy
-                    ArrayList<Integer> stop_ids = new ArrayList<>();
-                    ArrayList<Integer> transfer_ids = new ArrayList<>();
-                    ArrayList<Integer> hub_locations = new ArrayList<>();
-                    stop_ids = new ArrayList<>(Arrays.asList(2, 5, 9, 12, 13, 17, 21, 23));
-//                    stop_ids = new ArrayList<>(Arrays.asList(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23));
-
-                        try {
-                            System.out.println("reading network");
-                            Reader.read_network(network, network_filename);
-                            System.out.println("reading nodes");
-                            Reader.read_nodes(nodes, nodes_filename);
-                            System.out.println("reading stops");
-                            if (use_stop_ids == false) {
-                                Reader.read_stops(stop_ids, nodes, stops, stops_filename);
-                            }
-                            System.out.println("reading requests");
-                            if (create_requests){
-                                create_requests(n_requests, requests, stop_ids, simulation_period, network, max_wait_t, max_tt_p, max_tt_min, max_tt_added, seed);
-                            } else {
-                                Reader.read_requests(requests, stops, network, requests_filename, max_wait_t,
-                                        max_tt_p, max_tt_min, max_tt_added, requests_source_crs, requests_destination_crs);
-                            }
-                            n_requests = requests.size();
-                        } catch (IOException e) {
-                            e.printStackTrace();
+                    try {
+                        System.out.println("reading network");
+                        Reader.read_network(network, network_filename);
+                        System.out.println("reading nodes");
+                        Reader.read_nodes(nodes, nodes_filename);
+                        System.out.println("reading stops");
+                        if (use_stop_ids == false) {
+                            stop_ids = new ArrayList<>();
+                            Reader.read_stops(stop_ids, nodes, stops, stops_filename);
                         }
+                        System.out.println("reading requests");
+                        if (create_requests) {
+                            create_requests(n_requests, requests, stop_ids, simulation_period, network, max_wait_t, max_tt_p, max_tt_min, max_tt_added, seed);
+                        } else {
+                            Reader.read_requests(requests, stops, network, requests_filename, max_wait_t,
+                                    max_tt_p, max_tt_min, max_tt_added, requests_source_crs, requests_destination_crs);
+                        }
+                        n_requests = requests.size();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
 
                     //create a graph for shortest path calculation
                     DirectedGraph graph = new DirectedGraph();
@@ -148,11 +160,7 @@ public class Main {
                     } else {
                         Reader.read_transfers(transfer_ids, stops, transferStops_filename);
                     }
-//                    System.out.println("number of transfer nodes: " + stop_ids.size());
                     System.out.println("number of transfer ids: " + transfer_ids.size());
-//                    System.out.println("# of transfers: " + n_transfers_ratio * stop_ids.size());
-//                    System.out.println("# of transfers: " + (int) n_transfers_ratio * stop_ids.size());
-//        for (Integer transfer_id : transfer_ids) System.out.println("transfer id: " + transfer_id);
 
                     // INITIALIZE VEHICLE LOCATIONS
                     System.out.println("initializing vehicles location");
@@ -161,9 +169,7 @@ public class Main {
                                 hubs_source_crs, hubs_destination_crs);
                     }
                     System.out.println("hub locations size: " + hub_locations.size());
-//                    for (int i: hub_locations){
-//                        System.out.println("hub id: " + i);
-//                    }
+
                     initialize_vehicles(use_hubs, n_veh, stop_ids, vehicles, seed, hub_locations);
                     System.out.println("vehicles size:" + vehicles.size());
 
@@ -182,30 +188,32 @@ public class Main {
                         int t = x * t_step + simulation_start_time;
                         System.out.println("t: " + t);
 
-                        int occ[] = new int[]{0,0,0,0,0,0,0,0};
-                        for (Map.Entry<Integer, Vehicle> vehicle: vehicles.entrySet()){
-                            if (vehicle.getValue().route_nodes.size()==0 && vehicle.getValue().tt_to_next_node==0){
-                                occ[0] +=1;
-                            } else if (vehicle.getValue().current_load == 0) {
-                                occ[1] +=1;
-                            } else if (vehicle.getValue().current_load == 1) {
-                                occ[2] +=1;
-                            }else if (vehicle.getValue().current_load == 2) {
-                                occ[3] +=1;
-                            }else if (vehicle.getValue().current_load == 3) {
-                                occ[4] +=1;
-                            }else if (vehicle.getValue().current_load == 4) {
-                                occ[5] +=1;
-                            }else if (vehicle.getValue().current_load == 5) {
-                                occ[6] +=1;
-                            }else if (vehicle.getValue().current_load == 6) {
-                                occ[7] +=1;
+                        if (write_occupancy_info) {
+                            int occ[] = new int[]{0, 0, 0, 0, 0, 0, 0, 0};
+                            for (Map.Entry<Integer, Vehicle> vehicle : vehicles.entrySet()) {
+                                if (vehicle.getValue().route_nodes.size() == 0 && vehicle.getValue().tt_to_next_node == 0) {
+                                    occ[0] += 1;
+                                } else if (vehicle.getValue().current_load == 0) {
+                                    occ[1] += 1;
+                                } else if (vehicle.getValue().current_load == 1) {
+                                    occ[2] += 1;
+                                } else if (vehicle.getValue().current_load == 2) {
+                                    occ[3] += 1;
+                                } else if (vehicle.getValue().current_load == 3) {
+                                    occ[4] += 1;
+                                } else if (vehicle.getValue().current_load == 4) {
+                                    occ[5] += 1;
+                                } else if (vehicle.getValue().current_load == 5) {
+                                    occ[6] += 1;
+                                } else if (vehicle.getValue().current_load == 6) {
+                                    occ[7] += 1;
+                                }
                             }
-                        }
-                        String[] line_occ = {String.valueOf(x), String.valueOf(occ[0]), String.valueOf(occ[1]), String.valueOf(occ[2]),
-                                String.valueOf(occ[3]), String.valueOf(occ[4]), String.valueOf(occ[5]), String.valueOf(occ[6]), String.valueOf(occ[7])};
+                            String[] line_occ = {String.valueOf(x), String.valueOf(occ[0]), String.valueOf(occ[1]), String.valueOf(occ[2]),
+                                    String.valueOf(occ[3]), String.valueOf(occ[4]), String.valueOf(occ[5]), String.valueOf(occ[6]), String.valueOf(occ[7])};
 
-                        writer_occ.writeNext(line_occ);
+                            writer_occ.writeNext(line_occ);
+                        }
 //
 //                        writer3.flush();
 
@@ -327,15 +335,18 @@ public class Main {
                                 vehicles.get(best_transfer.v2_id).cost = find_cost(theta, beta, t + t_step, vehicles.get(best_transfer.v2_id).route_stops, v2_active_requests,
                                         requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, n_veh, false, delta, rho, 0);
 
-//                                int veh = best_transfer.v2_id;
-                                //copy transfer locations
-//                                for (Vehicle.Route_stop stop : vehicles.get(veh).route_stops) {
-//                                    if (stop.pickup_ids.contains(new_r_id)) {
-//                                        String[] line2 = {String.valueOf(stop.stop_id), String.valueOf(stops.get(stop.stop_id).x), String.valueOf(stops.get(stop.stop_id).y), String.valueOf(stops.get(stop.stop_id).former_id)};
-//                                        writer2.writeNext(line2);
-//                                        continue;
-//                                    }
-//                                }
+                                if (write_transfer_locations) {
+                                    int veh = best_transfer.v2_id;
+                                    //copy transfer locations
+                                    for (Vehicle.Route_stop stop : vehicles.get(veh).route_stops) {
+                                        if (stop.pickup_ids.contains(new_r_id)) {
+                                            String[] line2 = {String.valueOf(stop.stop_id), String.valueOf(stops.get(stop.stop_id).x), String.valueOf(stops.get(stop.stop_id).y), String.valueOf(stops.get(stop.stop_id).former_id)};
+                                            writer2.writeNext(line2);
+                                            continue;
+                                        }
+                                    }
+                                }
+
                                 //without transfer assignment
                             } else {
                                 assignment_update(vehicles, requests, network, best_v_id, best_v_route, r_id, best_v_cost, graph);
@@ -344,12 +355,14 @@ public class Main {
 //                print_route(vehicles, 9, new ArrayList<>());
 //                System.out.println("cost: " + vehicles.get(9).cost);
 
-                            String[] line_tr = {String.valueOf(r_id), String.valueOf(requests.get(r_id).submission_t),
-                                    String.valueOf(requests.get(r_id).pickup_t), String.valueOf(requests.get(r_id).dropoff_t),
-                                    String.valueOf(t), String.valueOf(requests.get(r_id).status), String.valueOf(best_transfer.number_of_transfer_nodes),
-                                    String.valueOf(best_transfer.v1_transfer_waiting_t), String.valueOf(best_transfer.v2_transfer_waiting_t),
-                                    String.valueOf(best_cost_diff), String.valueOf(transfer_cost), String.valueOf(requests.get(r_id).transfer)};
-                            writer_tr.writeNext(line_tr);
+                            if (write_transfer_info) {
+                                String[] line_tr = {String.valueOf(r_id), String.valueOf(requests.get(r_id).submission_t),
+                                        String.valueOf(requests.get(r_id).pickup_t), String.valueOf(requests.get(r_id).dropoff_t),
+                                        String.valueOf(t), String.valueOf(requests.get(r_id).status), String.valueOf(best_transfer.number_of_transfer_nodes),
+                                        String.valueOf(best_transfer.v1_transfer_waiting_t), String.valueOf(best_transfer.v2_transfer_waiting_t),
+                                        String.valueOf(best_cost_diff), String.valueOf(transfer_cost), String.valueOf(requests.get(r_id).transfer)};
+                                writer_tr.writeNext(line_tr);
+                            }
                         }
 
 //            if (t > 18200 && t < 19350) {
@@ -380,22 +393,34 @@ public class Main {
 //        print_request_info(requests, 170);
 //        print_request_info(requests, 10170);
 
-//                    writer2.close();
+                    writer2.close();
+                    if (write_transfer_locations == false){
+                        file2.delete();
+                    }
+
                     writer.flush();
 //                    writer3.close();
 
                     //requests info output file
-//                    report_requests_info("requests_info.csv", requests);
+                    if (write_requests_info) {
+                        report_requests_info("requests_info.csv", requests);
+                    }
                 }
+
                 writer_tr.close();
+                if (write_transfer_info == false) {
+                    file_tr.delete();
+                }
                 writer_occ.close();
+                if (write_occupancy_info == false) {
+                    file_occ.delete();
+                }
             }
         }
         writer.close();
     }
 
     public static void create_graph(String links_filename, int n_nodes, DirectedGraph graph) {
-//        DirectedGraph graph = new DirectedGraph<>();
 
         for (int i = 0; i < n_nodes; i++) {
             graph.addNode(i);
@@ -633,7 +658,7 @@ public class Main {
                             data.vehicles.get(pair.getKey()).total_distance += network.dist[data.vehicles.get(pair.getKey()).initial_loc][pair.getValue().route_stops.get(0).stop_id];
 
                             //update empty traveled distance
-                            if (pair.getValue().current_load == 0){
+                            if (pair.getValue().current_load == 0) {
                                 data.vehicles.get(pair.getKey()).total_empty_distance += network.dist[data.vehicles.get(pair.getKey()).initial_loc][pair.getValue().route_stops.get(0).stop_id];
                             }
 
@@ -641,7 +666,7 @@ public class Main {
                             data.vehicles.get(pair.getKey()).total_distance += network.dist[data.vehicles.get(pair.getKey()).route_stops.get(data.vehicles.get(pair.getKey()).route_stops.size() - 1).stop_id][pair.getValue().route_stops.get(0).stop_id];
 
                             //update empty traveled distance
-                            if (pair.getValue().current_load == 0){
+                            if (pair.getValue().current_load == 0) {
                                 data.vehicles.get(pair.getKey()).total_empty_distance += network.dist[data.vehicles.get(pair.getKey()).route_stops.get(data.vehicles.get(pair.getKey()).route_stops.size() - 1).stop_id][pair.getValue().route_stops.get(0).stop_id];
                             }
                         }
@@ -752,7 +777,7 @@ public class Main {
 //                cost = theta * T + (1 - theta) * S + (1 - theta) * beta * T * T + gamma * ((float) n_active_transfers / n_veh + 1) * (transfer_t - t);
 
                 //means that there is no without transfer solution
-                if (no_transfer_cost == Double.POSITIVE_INFINITY){
+                if (no_transfer_cost == Double.POSITIVE_INFINITY) {
                     no_transfer_cost = 0;
                 }
 
@@ -1011,7 +1036,7 @@ public class Main {
             v1_stop_ids.add(v1_stop.stop_id);
         }
 
-        if(!v1_stop_ids.contains(v1.current_loc)) {
+        if (!v1_stop_ids.contains(v1.current_loc)) {
             v1_stop_ids.add(v1.current_loc);
         }
 
@@ -1019,7 +1044,7 @@ public class Main {
             v2_stop_ids.add(v2_stop.stop_id);
         }
 
-        if(!v2_stop_ids.contains(v2.current_loc)) {
+        if (!v2_stop_ids.contains(v2.current_loc)) {
             v2_stop_ids.add(v2.current_loc);
         }
 
@@ -1844,7 +1869,7 @@ public class Main {
         String[] header_r = {"request_id", "submission_t", "pickup_t", "dropoff_t", "status"};
 
         writer_r.writeNext(header_r);
-        for (Map.Entry<Integer, Request> r : requests.entrySet()){
+        for (Map.Entry<Integer, Request> r : requests.entrySet()) {
             print_request_info(requests, r.getKey());
             String[] line = {String.valueOf(r.getKey()), String.valueOf(r.getValue().submission_t),
                     String.valueOf(r.getValue().pickup_t), String.valueOf(r.getValue().dropoff_t),
