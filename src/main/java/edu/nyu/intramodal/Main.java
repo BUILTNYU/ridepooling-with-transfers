@@ -9,6 +9,7 @@ import java.util.*;
 
 public class Main {
 
+    static final int big_N = (int) Math.pow(10,7);
     public static void main(String[] args) throws CloneNotSupportedException, IOException {
 
         //FILENAMES
@@ -23,12 +24,13 @@ public class Main {
 
         //CONTROLS
         boolean use_hubs = false;
-        boolean use_stop_ids = true;
+        boolean use_stop_ids = true; //if false, it needs a stops file to read the data from
         boolean create_requests = true;
         boolean write_occupancy_info = false;
         boolean write_transfer_info = false;
         boolean write_transfer_locations = false;
         boolean write_requests_info = false;
+        boolean enable_rebalancing = true;
 
         //PARAMETERS
         int simulation_period = 24 * 3600; //seconds
@@ -53,11 +55,11 @@ public class Main {
         float rho = 0.0f;
 //        long seed = 4; //random seed
         String requests_source_crs = "EPSG:4326"; //EPSG:4326 is equivalent to WGS84
-        String requests_destination_crs = "EPSG:25832"; //EPSG:25832 is New York projected coordinate system in meters
+        String requests_destination_crs = "EPSG:25832"; //EPSG:25832 is projected coordinate system in meters for Europe
         String hubs_source_crs = "EPSG:4326"; //EPSG:4326 is equivalent to WGS84
-        String hubs_destination_crs = "EPSG:25832"; //EPSG:25832 is New York projected coordinate system in meters
+        String hubs_destination_crs = "EPSG:25832"; //EPSG:25832 is projected coordinate system in meters for Europe
 
-        //transfer parameters
+        //TRANSFER PARAMETERS
         int transfer_max_dist_t = 10 * 60; //maximum distance in terms of time to find candidate transfer nodes between two vehicles
         int transfer_max_wait_t = 10 * 60; //maximum waiting time at a transfer node
         float n_transfers_ratio = 0.2f; //ratio of # of transfer nodes to # of stops
@@ -98,12 +100,12 @@ public class Main {
             for (float gamma = 0.0f; gamma < 0.000001; gamma += 0.0002) {
 
                 //write transfer info
-                    File file_tr = new File(filename + "_gamma" + gamma + "_transferInfo.csv");
-                    FileWriter outputfile_tr = new FileWriter(file_tr);
-                    CSVWriter writer_tr = new CSVWriter(outputfile_tr);
-                    String[] header_tr = {"request_id", "submission_t", "pickup_t", "dropoff_t", "now", "status",
-                            "#cand_transfer_nodes", "v1_transfer_t", "v2_transfer_t"};
-                    writer_tr.writeNext(header_tr);
+                File file_tr = new File(filename + "_gamma" + gamma + "_transferInfo.csv");
+                FileWriter outputfile_tr = new FileWriter(file_tr);
+                CSVWriter writer_tr = new CSVWriter(outputfile_tr);
+                String[] header_tr = {"request_id", "submission_t", "pickup_t", "dropoff_t", "now", "status",
+                        "#cand_transfer_nodes", "v1_transfer_t", "v2_transfer_t"};
+                writer_tr.writeNext(header_tr);
 
                 //data for occupancy plot
                 File file_occ = new File(filename + "_gamma" + gamma + "_occupancyInfo.csv");
@@ -214,8 +216,6 @@ public class Main {
 
                             writer_occ.writeNext(line_occ);
                         }
-//
-//                        writer3.flush();
 
                         n_active_transfers = time_update(theta, beta, t, t_step, vehicles, data, requests, network, base_dwell_time, p_dwell_time, max_wait_t, avg_occ, n_active_transfers, gamma, delta, rho);
 
@@ -285,6 +285,20 @@ public class Main {
                                 //TODO should it be t or t+t_step?
                                 if (t - requests.get(r_id).submission_t > max_wait_t) {
                                     requests.get(r_id).status = "rejected";
+                                    if (enable_rebalancing) {
+                                        //find the best vehicle to go to the pickup location of rejected request
+                                        Container best_vehicle_rebalance; //container format: veh_id, cost, route
+
+                                        best_vehicle_rebalance = find_best_vehicle_rebalance(network, vehicles, requests, t, r_id, v_cap,
+                                                max_wait_t, theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, gamma, n_active_transfers, delta, rho);
+
+                                        if (best_vehicle_rebalance.v1_id != null) {
+                                            Integer best_v_id_rebalance = best_vehicle_rebalance.v1_id;
+                                            List<Vehicle.Route_stop> best_v_route_rebalance = best_vehicle_rebalance.v1_route;
+                                            Double best_v_cost_rebalance = best_vehicle_rebalance.v1_cost;
+                                            assignment_update(vehicles, requests, network, best_v_id_rebalance, best_v_route_rebalance, r_id, best_v_cost_rebalance, graph, true);
+                                        }
+                                    }
                                 } else {
                                     requests.get(r_id).status = "pending";
                                     if (x + 1 < ordered_requests.length) {
@@ -303,7 +317,7 @@ public class Main {
                                 }
 
                                 //add a new request for the second part of the trip (after transfer)
-                                int new_r_id = r_id + 10000;
+                                int new_r_id = r_id + big_N;
                                 requests.put(new_r_id, load_request(requests.get(r_id).origin, requests.get(r_id).dest, requests.get(r_id).submission_t, network.dist, max_wait_t, max_tt_p, max_tt_min, max_tt_added));
                                 requests.get(new_r_id).submission_t = best_transfer.v2_submission_t;
                                 requests.get(new_r_id).transfer = true;
@@ -313,8 +327,8 @@ public class Main {
                                 requests.get(r_id).transfer = true;
                                 n_active_transfers++;
 
-                                assignment_update(vehicles, requests, network, best_transfer.v1_id, best_transfer.v1_route, r_id, best_transfer.v1_cost, graph);
-                                assignment_update(vehicles, requests, network, best_transfer.v2_id, best_transfer.v2_route, new_r_id, best_transfer.v2_cost, graph);
+                                assignment_update(vehicles, requests, network, best_transfer.v1_id, best_transfer.v1_route, r_id, best_transfer.v1_cost, graph, false);
+                                assignment_update(vehicles, requests, network, best_transfer.v2_id, best_transfer.v2_route, new_r_id, best_transfer.v2_cost, graph, false);
 
                                 //TODO look for alternatives
                                 //cost of vehicle 2 in evaluation step is using vehicle 1 dropoff time to calculate passenger's journey
@@ -349,7 +363,7 @@ public class Main {
 
                                 //without transfer assignment
                             } else {
-                                assignment_update(vehicles, requests, network, best_v_id, best_v_route, r_id, best_v_cost, graph);
+                                assignment_update(vehicles, requests, network, best_v_id, best_v_route, r_id, best_v_cost, graph, false);
                             }
 
 //                print_route(vehicles, 9, new ArrayList<>());
@@ -394,12 +408,11 @@ public class Main {
 //        print_request_info(requests, 10170);
 
                     writer2.close();
-                    if (write_transfer_locations == false){
+                    if (write_transfer_locations == false) {
                         file2.delete();
                     }
 
                     writer.flush();
-//                    writer3.close();
 
                     //requests info output file
                     if (write_requests_info) {
@@ -526,7 +539,7 @@ public class Main {
             int dest = stop_ids.get(rand.nextInt(stop_ids.size()));
             while (origin == dest)
                 dest = stop_ids.get(rand.nextInt(stop_ids.size()));
-            int sub_time = rand.nextInt(simulation_period);
+            int sub_time = rand.nextInt(simulation_period-1*3600);
             requests.put(i, load_request(origin, dest, sub_time, network.dist, max_wait_t, max_tt_p, max_tt_min, max_tt_added));
         }
     }
@@ -644,7 +657,7 @@ public class Main {
                             requests.get(i).status = "alighted";
                             pair.getValue().active_requests.remove(Integer.valueOf(i));
                             //update number of active transfers
-                            if (i > 10000) {
+                            if (i > big_N) {
                                 n_active_transfers -= 1;
                             }
                         }
@@ -684,14 +697,14 @@ public class Main {
                         //add transfer time to tt_to_next_node
                         int transfer_wait_t = 0;
                         for (int p_id : pair.getValue().route_stops.get(0).pickup_ids) {
-                            if (requests.get(p_id).transfer == true && p_id > 10000) {
+                            if (requests.get(p_id).transfer == true && p_id > big_N) {
                                 int temp_transfer_t = requests.get(p_id).submission_t - pair.getValue().route_stops.get(0).exp_stop_arr_t + max_wait_t;
                                 if (temp_transfer_t > transfer_wait_t)
                                     transfer_wait_t = temp_transfer_t;
                             }
                         }
                         for (int p_id : pair.getValue().route_stops.get(0).dropoff_ids) {
-                            if (requests.get(p_id).transfer == true && p_id < 10000) {
+                            if (requests.get(p_id).transfer == true && p_id < big_N) {
                                 int temp_transfer_t = requests.get(p_id).p_latest_arr_t - pair.getValue().route_stops.get(0).exp_stop_arr_t;
                                 if (temp_transfer_t > transfer_wait_t)
                                     transfer_wait_t = temp_transfer_t;
@@ -744,7 +757,7 @@ public class Main {
 //            find transfer time at the last stop for calculating vehicle's travel time
             //if adding a transfer is being evaluated, transfer wait time is an input because the request id does not exist yet
             for (int p_id : route.get(route.size() - 1).pickup_ids) {
-                if (requests.containsKey(p_id) && requests.get(p_id).transfer == true && p_id > 10000) {
+                if (requests.containsKey(p_id) && requests.get(p_id).transfer == true && p_id > big_N) {
                     int temp_transfer_t = requests.get(p_id).submission_t - route.get(route.size() - 1).exp_stop_arr_t + max_wait_t;
                     if (temp_transfer_t > transfer_wait_t)
                         transfer_wait_t = temp_transfer_t;
@@ -752,7 +765,7 @@ public class Main {
             }
 
             for (int p_id : route.get(route.size() - 1).dropoff_ids) {
-                if (requests.containsKey(p_id) && requests.get(p_id).transfer == true && p_id < 10000) {
+                if (requests.containsKey(p_id) && requests.get(p_id).transfer == true && p_id < big_N) {
                     int temp_transfer_t = requests.get(p_id).p_latest_arr_t - route.get(route.size() - 1).exp_stop_arr_t;
                     if (temp_transfer_t > transfer_wait_t)
                         transfer_wait_t = temp_transfer_t;
@@ -838,6 +851,46 @@ public class Main {
         //Merge repetitive consecutive stops
         merge_stops(best_v.v1_route);
 
+        return best_v;
+    }
+
+    public static Container find_best_vehicle_rebalance(Network network, HashMap<Integer, Vehicle> vehicles,
+                                                        HashMap<Integer, Request> requests, int t, int r_id, int v_cap,
+                                                        int max_wait_t, float theta, float beta, int p_dwell_time,
+                                                        int base_dwell_time, double big_M, int t_step, float gamma,
+                                                        int n_active_transfers, float delta, float rho) throws CloneNotSupportedException {
+
+        double best_cost_diff = big_M;
+        Container best_v = new Container(null, null, new ArrayList<>());
+
+        //find idle vehicles
+        ArrayList<Integer> idle_vehicles = new ArrayList<>();
+        for (Map.Entry<Integer, Vehicle> v : vehicles.entrySet()) {
+            if (v.getValue().active_requests.size() == 0 && v.getValue().route_stops.size() == 0) {
+                idle_vehicles.add(v.getKey());
+            }
+        }
+        for (int v_id : idle_vehicles) {
+            List<Vehicle.Route_stop> route = new ArrayList<>();
+
+            //adding pickup node
+            route.add(0, new Vehicle.Route_stop(requests.get(r_id).origin, null, new ArrayList<>(Arrays.asList()), new ArrayList<>(Arrays.asList())));
+
+            update_exp_arr_t(0, base_dwell_time, p_dwell_time, t, t_step, network, vehicles.get(v_id), route, requests, max_wait_t);
+
+            //temp_requests is used to have a copy of active requests and to make changes to them
+            HashMap<Integer, List<Integer>> temp_requests = new HashMap<>();
+
+            double cost = find_cost(theta, beta, t + t_step, route, temp_requests, requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, vehicles.size(), false, delta, rho, 0);
+
+            //update the best route
+            double cost_diff = cost - vehicles.get(v_id).cost;
+
+            if (cost_diff < best_cost_diff) {
+                best_cost_diff = cost_diff;
+                best_v = new Container(v_id, cost, route);
+            }
+        }
         return best_v;
     }
 
@@ -1206,7 +1259,7 @@ public class Main {
                                                    float delta, float rho, double no_transfer_cost) throws CloneNotSupportedException {
         double best_cost = big_M;
         Container best_insertion = new Container(null, null, big_M, big_M, new ArrayList<>(), new ArrayList<>(), null, null, null, null, null);
-        int new_r_id = r_id + 10000; //new_r_id is used for the second part of the trip (after transfer)
+        int new_r_id = r_id + big_N; //new_r_id is used for the second part of the trip (after transfer)
 
         for (int i = 0; i <= v2.route_stops.size(); i++) {
             for (int j = i + 1; j <= v2.route_stops.size() + 1; j++) {
@@ -1448,8 +1501,8 @@ public class Main {
             for (int p_id : route.get(k - 1).pickup_ids) {
                 //when transfer is being evaluated in the find_best_transfer function, there is no need to add transfer_wait_t
                 // It is taken care of in the insertion heuristic process
-                // the first condition is for the case that transfer is being evaluated but not yet planned -> r_id+10000 is not in the requests object
-                if (requests.containsKey(p_id) && requests.get(p_id).transfer == true && p_id > 10000) {
+                // the first condition is for the case that transfer is being evaluated but not yet planned -> r_id+big_N is not in the requests object
+                if (requests.containsKey(p_id) && requests.get(p_id).transfer == true && p_id > big_N) {
                     int temp_transfer_t = requests.get(p_id).submission_t - route.get(k - 1).exp_stop_arr_t + max_wait_t;
                     if (temp_transfer_t > transfer_wait_t)
                         transfer_wait_t = temp_transfer_t;
@@ -1461,7 +1514,7 @@ public class Main {
                 }
             }
             for (int p_id : route.get(k - 1).dropoff_ids) {
-                if (requests.containsKey(p_id) && requests.get(p_id).transfer == true && p_id < 10000) {
+                if (requests.containsKey(p_id) && requests.get(p_id).transfer == true && p_id < big_N) {
                     int temp_transfer_t = requests.get(p_id).p_latest_arr_t - route.get(k - 1).exp_stop_arr_t;
                     if (temp_transfer_t > transfer_wait_t)
                         transfer_wait_t = temp_transfer_t;
@@ -1488,7 +1541,7 @@ public class Main {
         }
 
         //add the new request to the temp_requests
-        if (r_id < 10000) {
+        if (r_id < big_N) {
             temp_requests.put(r_id, Arrays.asList(null, null, requests.get(r_id).submission_t));
         } else {
             temp_requests.put(r_id, Arrays.asList(null, null, null));
@@ -1515,13 +1568,13 @@ public class Main {
             //update expected arrival times
             update_exp_arr_t(k, base_dwell_time, p_dwell_time, t, t_step, network, v, route, requests, max_wait_t);
 
-            if (t == 11520 && r_id == 706 && v_id == 10) {
-                System.out.println("right after update_exp_arr_t");
-                for (int p = 0; p < route.size(); p++) {
-                    System.out.println("stop id: " + route.get(p).stop_id + " exp arr t: " + route.get(p).exp_stop_arr_t +
-                            " pickup ids: " + route.get(p).pickup_ids + " dropoff ids: " + route.get(p).dropoff_ids);
-                }
-            }
+//            if (t == 11520 && r_id == 706 && v_id == 10) {
+//                System.out.println("right after update_exp_arr_t");
+//                for (int p = 0; p < route.size(); p++) {
+//                    System.out.println("stop id: " + route.get(p).stop_id + " exp arr t: " + route.get(p).exp_stop_arr_t +
+//                            " pickup ids: " + route.get(p).pickup_ids + " dropoff ids: " + route.get(p).dropoff_ids);
+//                }
+//            }
 
 
             if (transfer_v2 == false) {
@@ -1571,13 +1624,15 @@ public class Main {
 
     public static void assignment_update(HashMap<Integer, Vehicle> vehicles, HashMap<Integer, Request> requests,
                                          Network network, int best_v_id, List<Vehicle.Route_stop> best_v_route, int r_id,
-                                         Double cost, DirectedGraph graph) throws CloneNotSupportedException {
+                                         Double cost, DirectedGraph graph, boolean rebalance) throws CloneNotSupportedException {
 
         vehicles.get(best_v_id).route_stops.clear();
         for (Vehicle.Route_stop stop : best_v_route)
             vehicles.get(best_v_id).route_stops.add(stop.clone());
 //        vehicles.get(best_v_id).route_stops = best_v_route;
-        vehicles.get(best_v_id).active_requests.add(r_id);
+        if (!rebalance) {
+            vehicles.get(best_v_id).active_requests.add(r_id);
+        }
         vehicles.get(best_v_id).cost = cost;
 
         //re-find the shortest path
@@ -1602,8 +1657,10 @@ public class Main {
 //            vehicles.get(best_v_id).tt_to_next_node = network.dist[next_node][vehicles.get(best_v_id).route_nodes.get(0)] + 30;
         }
 
-        requests.get(r_id).status = "planned";
-        requests.get(r_id).assigned_veh = best_v_id;
+        if (!rebalance) {
+            requests.get(r_id).status = "planned";
+            requests.get(r_id).assigned_veh = best_v_id;
+        }
 
         for (int i = 0; i < v_stops.size(); i++) {
             //update route_nodes
@@ -1685,9 +1742,9 @@ public class Main {
                     sum_served_pax++;
                 }
             } else {
-                if (r.getValue().status.equals("alighted") && r.getKey() > 10000) {
-                    sum_invehicle_time += (r.getValue().dropoff_t - requests.get(r.getKey() - 10000).pickup_t);
-                    sum_waiting_time += (requests.get(r.getKey() - 10000).pickup_t - requests.get(r.getKey() - 10000).submission_t);
+                if (r.getValue().status.equals("alighted") && r.getKey() > big_N) {
+                    sum_invehicle_time += (r.getValue().dropoff_t - requests.get(r.getKey() - big_N).pickup_t);
+                    sum_waiting_time += (requests.get(r.getKey() - big_N).pickup_t - requests.get(r.getKey() - big_N).submission_t);
                     sum_served_pax++;
                 }
             }
@@ -1718,7 +1775,7 @@ public class Main {
                     sum_inprocess += 1;
                 }
             } else {
-                if (r.getKey() > 10000 && (r.getValue().status.equals("planned") || r.getValue().status.equals("onboard"))) {
+                if (r.getKey() > big_N && (r.getValue().status.equals("planned") || r.getValue().status.equals("onboard"))) {
                     sum_inprocess += 1;
                 }
             }
@@ -1781,7 +1838,7 @@ public class Main {
         System.out.println("Run time: " + run_time + " sec");
         String[] line = {String.valueOf(seed), String.valueOf(simulation_period), String.valueOf(n_requests), String.valueOf(n_vehicles),
                 String.valueOf(n_stops), String.valueOf(n_transfer_nodes), String.valueOf(theta), String.valueOf(beta), String.valueOf(gamma), String.valueOf(delta), String.valueOf(rho),
-                String.valueOf(avg_pax_invehicle_time), String.valueOf(avg_pax_waiting_time), String.valueOf(avg_pax_invehicle_time + 1.76 * avg_pax_waiting_time),
+                String.valueOf(avg_pax_invehicle_time), String.valueOf(avg_pax_waiting_time), String.valueOf(avg_pax_invehicle_time + 1.4 * avg_pax_waiting_time),
                 String.valueOf(sum_veh_idle_time_d), String.valueOf(avg_occupancy), String.valueOf(sum_served_pax),
                 String.valueOf(sum_rejected + sum_pending), String.valueOf(sum_traveled_dist_d), String.valueOf(avg_traveled_dist), String.valueOf(sum_empty_traveled_dist_d), String.valueOf(n_transfers), String.valueOf(run_time)};
 
@@ -1820,7 +1877,7 @@ public class Main {
                 int v = r.getValue().assigned_veh;
                 System.out.println("vehicle id: " + v);
                 for (Vehicle.Route_stop stop : data.vehicles.get(v).route_stops) {
-                    if (r.getKey() < 10000) {
+                    if (r.getKey() < big_N) {
                         if (stop.dropoff_ids.contains(r.getKey())) {
                             System.out.println("drop-off time in vehicle 1: " + stop.exp_stop_arr_t);
                         }
