@@ -36,6 +36,7 @@ public class Main {
         int simulation_period = 24 * 3600; //seconds
         int simulation_start_time = 0 * 3600;
         int t_step = 30; //time step in terms of seconds
+        int n_veh = 12; //number of vehicles
         int v_cap = 6; //vehicle capacity
         int n_nodes = 24; //number of nodes in the network
         int n_requests = 3000;
@@ -47,6 +48,7 @@ public class Main {
         int max_tt_added = 15 * 60; //a parameter for finding maximum travel time for each request, provided by MOIA - maximum travel time added to the direct travel time
         int base_dwell_time = 50; //base dwell time at each stop (seconds)
         int p_dwell_time = 10; //dwell time added to base dwell time for each passenger picked up or dropped off (seconds)
+        float wait_vot = 1.4f;
         float theta = 0.5f; //a parameter of the cost function
         float beta = 0.005f; //a parameter of the cost function
         double big_M = Double.POSITIVE_INFINITY; //an arbitrary large value used in different functions
@@ -94,8 +96,6 @@ public class Main {
                 "# of rejected or pending", "total traveled distance (hrs)", "avg traveled distance (min)",
                 "total empty traveled distance (hrs)", "# of transfers", "run time"};
         writer.writeNext(header);
-
-        for (int n_veh = 12; n_veh < 13; n_veh += 2) {
 
             for (float gamma = 0.0f; gamma < 0.000001; gamma += 0.0002) {
 
@@ -217,7 +217,7 @@ public class Main {
                             writer_occ.writeNext(line_occ);
                         }
 
-                        n_active_transfers = time_update(theta, beta, t, t_step, vehicles, data, requests, network, base_dwell_time, p_dwell_time, max_wait_t, avg_occ, n_active_transfers, gamma, delta, rho);
+                        n_active_transfers = time_update(theta, beta, t, t_step, vehicles, data, requests, network, base_dwell_time, p_dwell_time, max_wait_t, avg_occ, n_active_transfers, gamma, delta, rho, wait_vot);
 
 //            if (t > 26100) {
 //                System.out.println("after time update");
@@ -238,7 +238,7 @@ public class Main {
                             Container best_vehicle; //container format: veh_id, cost, route
 
                             best_vehicle = find_best_vehicle(network, vehicles, requests, candidate_vehicles, t, r_id, v_cap,
-                                    max_wait_t, theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, gamma, n_active_transfers, delta, rho);
+                                    max_wait_t, theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, gamma, n_active_transfers, delta, rho, wait_vot);
 
                             Integer best_v_id = best_vehicle.v1_id;
                             List<Vehicle.Route_stop> best_v_route = best_vehicle.v1_route;
@@ -254,7 +254,7 @@ public class Main {
                             List<List<Integer>> transfer_v1_cands;
 
                             transfer_v1_cands = find_transfer_v1(network, vehicles, requests, candidate_vehicles, t,
-                                    r_id, v_cap, max_wait_t, theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, use_best_v, best_v_id, n_firstV_cands, gamma, n_active_transfers, delta, rho);
+                                    r_id, v_cap, max_wait_t, theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, use_best_v, best_v_id, n_firstV_cands, gamma, n_active_transfers, delta, rho, wait_vot);
 
                             //if it doesn't find any vehicle the id and pickup index would be null
 //                Integer v1_id = transfer_v1.get(0);
@@ -269,7 +269,7 @@ public class Main {
                             if (transfer_v1_cands.size() != 0) {
                                 best_transfer = find_best_transfer(network, vehicles, requests, t, r_id, v_cap, max_wait_t,
                                         theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, transfer_v1_cands,
-                                        transfer_max_dist_t, transfer_ids, transfer_max_wait_t, gamma, n_active_transfers, delta, rho, best_cost_diff);
+                                        transfer_max_dist_t, transfer_ids, transfer_max_wait_t, gamma, n_active_transfers, delta, rho, best_cost_diff, wait_vot);
                                 if (best_transfer.v2_id != null) {
                                     transfer_cost = best_transfer.v1_cost + best_transfer.v2_cost -
                                             vehicles.get(best_transfer.v1_id).cost - vehicles.get(best_transfer.v2_id).cost;
@@ -290,7 +290,7 @@ public class Main {
                                         Container best_vehicle_rebalance; //container format: veh_id, cost, route
 
                                         best_vehicle_rebalance = find_best_vehicle_rebalance(network, vehicles, requests, t, r_id, v_cap,
-                                                max_wait_t, theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, gamma, n_active_transfers, delta, rho);
+                                                max_wait_t, theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, gamma, n_active_transfers, delta, rho, wait_vot);
 
                                         if (best_vehicle_rebalance.v1_id != null) {
                                             Integer best_v_id_rebalance = best_vehicle_rebalance.v1_id;
@@ -344,10 +344,10 @@ public class Main {
                                 }
 
                                 vehicles.get(best_transfer.v1_id).cost = find_cost(theta, beta, t + t_step, vehicles.get(best_transfer.v1_id).route_stops, v1_active_requests,
-                                        requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, n_veh, false, delta, rho, 0);
+                                        requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, n_veh, false, delta, rho, 0, wait_vot);
 
                                 vehicles.get(best_transfer.v2_id).cost = find_cost(theta, beta, t + t_step, vehicles.get(best_transfer.v2_id).route_stops, v2_active_requests,
-                                        requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, n_veh, false, delta, rho, 0);
+                                        requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, n_veh, false, delta, rho, 0, wait_vot);
 
                                 if (write_transfer_locations) {
                                     int veh = best_transfer.v2_id;
@@ -393,10 +393,10 @@ public class Main {
                     }
 
                     //one last time update (t is equal to simulation_period here)
-                    n_active_transfers = time_update(theta, beta, simulation_period, t_step, vehicles, data, requests, network, base_dwell_time, p_dwell_time, max_wait_t, avg_occ, n_active_transfers, gamma, delta, rho);
+                    n_active_transfers = time_update(theta, beta, simulation_period, t_step, vehicles, data, requests, network, base_dwell_time, p_dwell_time, max_wait_t, avg_occ, n_active_transfers, gamma, delta, rho, wait_vot);
 
                     //reporting simulation outputs
-                    report_outputs(requests, data, simulation_period, n_veh, transfer_ids.size(), transfer_max_wait_t, avg_occ, n, theta, beta, gamma, n_firstV_cands, n_requests, stops.size(), n_transfer_1, start_time, writer, seed, delta, rho);
+                    report_outputs(requests, data, simulation_period, n_veh, transfer_ids.size(), transfer_max_wait_t, avg_occ, n, theta, beta, gamma, n_firstV_cands, n_requests, stops.size(), n_transfer_1, start_time, writer, seed, delta, rho, wait_vot);
 
 ////        int n_transfers = n_transfer_1 + n_transfer_2;
                     System.out.println("number of transfers (better than without transfers): " + n_transfer_1);
@@ -429,7 +429,6 @@ public class Main {
                     file_occ.delete();
                 }
             }
-        }
         writer.close();
     }
 
@@ -591,7 +590,8 @@ public class Main {
 
     public static int time_update(float theta, float beta, int t, int t_step, HashMap<Integer, Vehicle> vehicles, Data data,
                                   HashMap<Integer, Request> requests, Network network, int base_dwell_time, int p_dwell_time,
-                                  int max_wait_t, ArrayList<Float> avg_occ, int n_active_transfers, float gamma, float delta, float rho) throws CloneNotSupportedException {
+                                  int max_wait_t, ArrayList<Float> avg_occ, int n_active_transfers, float gamma,
+                                  float delta, float rho, float wait_vot) throws CloneNotSupportedException {
 
         int sum_occ = 0;
 
@@ -736,7 +736,7 @@ public class Main {
                 active_requests_for_cost.put(i, Arrays.asList(requests.get(i).pickup_t, requests.get(i).dropoff_t, requests.get(i).submission_t));
             }
             pair.getValue().cost = find_cost(theta, beta, t + t_step, pair.getValue().route_stops, active_requests_for_cost,
-                    requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, vehicles.size(), false, delta, rho, 0);
+                    requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, vehicles.size(), false, delta, rho, 0, wait_vot);
 
             //calculating average occupancy
             sum_occ += pair.getValue().current_load;
@@ -749,7 +749,8 @@ public class Main {
     public static double find_cost(float theta, float beta, int t, List<Vehicle.Route_stop> route,
                                    HashMap<Integer, List<Integer>> v_requests, HashMap<Integer, Request> requests,
                                    int max_wait_t, int transfer_wait_t, int base_dwell_time, int p_dwell_time,
-                                   float gamma, int n_active_transfers, int transfer_t, int n_veh, boolean eval, float delta, float rho, double no_transfer_cost) {
+                                   float gamma, int n_active_transfers, int transfer_t, int n_veh, boolean eval,
+                                   float delta, float rho, double no_transfer_cost, float wait_vot) {
 
         double cost = 0;
         if (route.size() > 0) {
@@ -794,9 +795,9 @@ public class Main {
                     no_transfer_cost = 0;
                 }
 
-                cost = theta * T + (1 - theta) * S + 1.4 * (1 - theta) * W + (1 - theta) * beta * T * T + gamma * (transfer_t - t) * (transfer_t - t) + delta * (n_active_transfers) + rho * no_transfer_cost;
+                cost = theta * T + (1 - theta) * S + wait_vot * (1 - theta) * W + (1 - theta) * beta * T * T + gamma * (transfer_t - t) * (transfer_t - t) + delta * (n_active_transfers) + rho * no_transfer_cost;
             } else {
-                cost = theta * T + (1 - theta) * S + 1.4 * (1 - theta) * W + (1 - theta) * beta * T * T;
+                cost = theta * T + (1 - theta) * S + wait_vot * (1 - theta) * W + (1 - theta) * beta * T * T;
             }
         }
         return cost;
@@ -820,7 +821,7 @@ public class Main {
                                               HashMap<Integer, Request> requests, ArrayList<Integer> candidate_vehicles,
                                               int t, int r_id, int v_cap, int max_wait_t, float theta, float beta,
                                               int p_dwell_time, int base_dwell_time, double big_M, int t_step, float gamma,
-                                              int n_active_transfers, float delta, float rho) throws CloneNotSupportedException {
+                                              int n_active_transfers, float delta, float rho, float wait_vot) throws CloneNotSupportedException {
 
         double best_cost_diff = big_M;
         Container best_v = new Container(null, null, new ArrayList<>());
@@ -834,7 +835,7 @@ public class Main {
 
             //insertion_heuristic finds the best insertion of pickup and dropoff nodes into the vehicle's route
             candidate_route = insertion_heuristic(t, v_id, vehicles.get(v_id), r_id, requests, network, v_cap, max_wait_t,
-                    theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, gamma, n_active_transfers, vehicles.size(), delta, rho);
+                    theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, gamma, n_active_transfers, vehicles.size(), delta, rho, wait_vot);
 
             //candidate route should only have one item - hashmap is just used to return more than one object
             for (Map.Entry<Double, List<Vehicle.Route_stop>> item : candidate_route.entrySet()) {
@@ -858,7 +859,7 @@ public class Main {
                                                         HashMap<Integer, Request> requests, int t, int r_id, int v_cap,
                                                         int max_wait_t, float theta, float beta, int p_dwell_time,
                                                         int base_dwell_time, double big_M, int t_step, float gamma,
-                                                        int n_active_transfers, float delta, float rho) throws CloneNotSupportedException {
+                                                        int n_active_transfers, float delta, float rho, float wait_vot) throws CloneNotSupportedException {
 
         double best_cost_diff = big_M;
         Container best_v = new Container(null, null, new ArrayList<>());
@@ -881,7 +882,7 @@ public class Main {
             //temp_requests is used to have a copy of active requests and to make changes to them
             HashMap<Integer, List<Integer>> temp_requests = new HashMap<>();
 
-            double cost = find_cost(theta, beta, t + t_step, route, temp_requests, requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, vehicles.size(), false, delta, rho, 0);
+            double cost = find_cost(theta, beta, t + t_step, route, temp_requests, requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, vehicles.size(), false, delta, rho, 0, wait_vot);
 
             //update the best route
             double cost_diff = cost - vehicles.get(v_id).cost;
@@ -899,7 +900,8 @@ public class Main {
                                                                                 Network network, int v_cap, int max_wait_t,
                                                                                 float theta, float beta, int p_dwell_time,
                                                                                 int base_dwell_time, double big_M,
-                                                                                int t_step, float gamma, int n_active_transfers, int n_veh, float delta, float rho) throws CloneNotSupportedException {
+                                                                                int t_step, float gamma, int n_active_transfers,
+                                                                                int n_veh, float delta, float rho, float wait_vot) throws CloneNotSupportedException {
         double cost = big_M;
         int origin = requests.get(r_id).origin;
         int dest = requests.get(r_id).dest;
@@ -932,7 +934,7 @@ public class Main {
                 if (feasibility == 0) {
                     continue;
                 } else {
-                    double temp_cost = find_cost(theta, beta, t + t_step, route, temp_requests, requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, n_veh, false, delta, rho, 0);
+                    double temp_cost = find_cost(theta, beta, t + t_step, route, temp_requests, requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, n_veh, false, delta, rho, 0, wait_vot);
 
                     //update the best route
                     if (temp_cost < cost) {
@@ -968,7 +970,7 @@ public class Main {
                                                        int t, int r_id, int v_cap, int max_wait_t, float theta, float beta,
                                                        int p_dwell_time, int base_dwell_time, double big_M, int t_step,
                                                        boolean use_best_v, Integer best_veh_id, int num, float gamma,
-                                                       int n_active_transfers, float delta, float rho) throws CloneNotSupportedException {
+                                                       int n_active_transfers, float delta, float rho, float wait_vot) throws CloneNotSupportedException {
 
 //        System.out.println("finding first vehicle for transfer for request " + r_id);
         List<List<Integer>> best_vehicles = new ArrayList<>();
@@ -996,7 +998,7 @@ public class Main {
                 Integer pickup_index = null;
 
                 candidate_route = insertion_heuristic_v1(t, v_id, vehicles.get(v_id), r_id, requests, network, v_cap, max_wait_t,
-                        theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, gamma, n_active_transfers, vehicles.size(), delta, rho);
+                        theta, beta, p_dwell_time, base_dwell_time, big_M, t_step, gamma, n_active_transfers, vehicles.size(), delta, rho, wait_vot);
 
                 if (candidate_route.get(0) != null) {
                     new_cost = candidate_route.get(0);
@@ -1025,7 +1027,7 @@ public class Main {
     public static List<Double> insertion_heuristic_v1(int t, int v_id, Vehicle v, int r_id, HashMap<Integer, Request> requests,
                                                       Network network, int v_cap, int max_wait_t, float theta, float beta,
                                                       int p_dwell_time, int base_dwell_time, double big_M, int t_step,
-                                                      float gamma, int n_active_transfers, int n_veh, float delta, float rho) throws CloneNotSupportedException {
+                                                      float gamma, int n_active_transfers, int n_veh, float delta, float rho, float wait_vot) throws CloneNotSupportedException {
 
         double cost = big_M;
         Request r = requests.get(r_id);
@@ -1057,7 +1059,7 @@ public class Main {
             if (feasibility == 0) {
                 continue;
             } else {
-                double temp_cost = find_cost(theta, beta, t + t_step, route, temp_requests, requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, n_veh, false, delta, rho, 0);
+                double temp_cost = find_cost(theta, beta, t + t_step, route, temp_requests, requests, max_wait_t, 0, base_dwell_time, p_dwell_time, gamma, n_active_transfers, t + t_step, n_veh, false, delta, rho, 0, wait_vot);
 
                 //update the best route
                 if (temp_cost < cost) {
@@ -1121,7 +1123,7 @@ public class Main {
                                                HashMap<Integer, Request> requests, int t, int r_id, int v_cap,
                                                int max_wait_t, float theta, float beta, int p_dwell_time, int base_dwell_time,
                                                double big_M, int t_step, List<List<Integer>> transfer_v1_cands, int transfer_max_dist_t,
-                                               ArrayList<Integer> transfer_ids, int transfer_max_wait_t, float gamma, int n_active_transfers, float delta, float rho, double no_transfer_cost) throws CloneNotSupportedException {
+                                               ArrayList<Integer> transfer_ids, int transfer_max_wait_t, float gamma, int n_active_transfers, float delta, float rho, double no_transfer_cost, float wait_vot) throws CloneNotSupportedException {
 
         double best_cost_diff = big_M;
         Container best_v = new Container(null, null, null, null, new ArrayList<>(), new ArrayList<>(), null, null, null, null, null);
@@ -1144,7 +1146,7 @@ public class Main {
                         List<Vehicle.Route_stop> route_v2 = new ArrayList<>();
                         result = transfer_insertion_heuristic(requests, big_M, transfer_id, vehicles, r_id, v_cap, network,
                                 t, t_step, base_dwell_time, p_dwell_time, transfer_max_wait_t, max_wait_t, theta, beta,
-                                v1_id, v1_pickup_index, vehicle.getValue(), vehicle.getKey(), gamma, n_active_transfers, delta, rho, no_transfer_cost);
+                                v1_id, v1_pickup_index, vehicle.getValue(), vehicle.getKey(), gamma, n_active_transfers, delta, rho, no_transfer_cost, wait_vot);
 
                         cost_diff = (result.v1_cost + result.v2_cost) - (vehicles.get(v1_id).cost + vehicle.getValue().cost);
                         for (Vehicle.Route_stop stop : result.v1_route)
@@ -1177,7 +1179,7 @@ public class Main {
                                                          int t, int t_step, int base_dwell_time, int p_dwell_time,
                                                          int transfer_max_wait_t, int max_wait_t, float theta,
                                                          float beta, int v1_id, int v1_pickup_index, Vehicle v2, int v2_id,
-                                                         float gamma, int n_active_transfers, float delta, float rho, double no_transfer_cost) throws CloneNotSupportedException {
+                                                         float gamma, int n_active_transfers, float delta, float rho, double no_transfer_cost, float wait_vot) throws CloneNotSupportedException {
         double best_cost = big_M;
         Request r = requests.get(r_id);
         Container best_insertion = new Container(null, null, big_M, big_M, new ArrayList<>(), new ArrayList<>(), null, null, null, null, null);
@@ -1221,7 +1223,7 @@ public class Main {
                 Container transfer_insertion = insertion_heuristic_v2(t, v2, r_id, transfer_node, requests.get(r_id).dest,
                         requests, network, v_cap, max_wait_t, theta, beta, p_dwell_time, base_dwell_time, big_M, t_step,
                         veh_1, route1, v1_temp_requests.get(r_id).get(1), transfer_max_wait_t, i, veh_1.cost, v2_id, v1_id,
-                        vehicles, gamma, n_active_transfers, delta, rho, no_transfer_cost);
+                        vehicles, gamma, n_active_transfers, delta, rho, no_transfer_cost, wait_vot);
 
 //                if(r_id == 420 && v2_id == 11 && i == 2){
 //                    System.out.println("DDDDROPOFFF: " + v1_temp_requests.get(r_id).get(1));
@@ -1256,7 +1258,7 @@ public class Main {
                                                    List<Vehicle.Route_stop> route1_original, int v1_transfer_dropoff_t,
                                                    int transfer_max_wait_t, int dropoff_index, double v1_cost, int v2_id,
                                                    int v1_id, HashMap<Integer, Vehicle> vehicles, float gamma, int n_active_transfers,
-                                                   float delta, float rho, double no_transfer_cost) throws CloneNotSupportedException {
+                                                   float delta, float rho, double no_transfer_cost, float wait_vot) throws CloneNotSupportedException {
         double best_cost = big_M;
         Container best_insertion = new Container(null, null, big_M, big_M, new ArrayList<>(), new ArrayList<>(), null, null, null, null, null);
         int new_r_id = r_id + big_N; //new_r_id is used for the second part of the trip (after transfer)
@@ -1412,8 +1414,8 @@ public class Main {
                     update_temp_requests(route2, v2_temp_requests);
 
                     //because of transfer wait time shift, cost of vehicle 1 might have been changed as well
-                    double cost1 = find_cost(theta, beta, t + t_step, route1, v1_temp_requests, requests, max_wait_t, wait_cost1, base_dwell_time, p_dwell_time, gamma, n_active_transfers, v1_transfer_dropoff_t + v1_transfer_wait_t, vehicles.size(), true, delta, rho, no_transfer_cost);
-                    double cost2 = find_cost(theta, beta, t + t_step, route2, v2_temp_requests, requests, max_wait_t, wait_cost2, base_dwell_time, p_dwell_time, gamma, n_active_transfers, v1_transfer_dropoff_t + v1_transfer_wait_t, vehicles.size(), true, delta, rho, no_transfer_cost);
+                    double cost1 = find_cost(theta, beta, t + t_step, route1, v1_temp_requests, requests, max_wait_t, wait_cost1, base_dwell_time, p_dwell_time, gamma, n_active_transfers, v1_transfer_dropoff_t + v1_transfer_wait_t, vehicles.size(), true, delta, rho, no_transfer_cost, wait_vot);
+                    double cost2 = find_cost(theta, beta, t + t_step, route2, v2_temp_requests, requests, max_wait_t, wait_cost2, base_dwell_time, p_dwell_time, gamma, n_active_transfers, v1_transfer_dropoff_t + v1_transfer_wait_t, vehicles.size(), true, delta, rho, no_transfer_cost, wait_vot);
                     double temp_cost = cost1 + cost2 - v2.cost - v1_cost;
 
                     //update the best route
@@ -1721,7 +1723,8 @@ public class Main {
     public static void report_outputs(HashMap<Integer, Request> requests, Data data, int simulation_period,
                                       int n_vehicles, int n_transfer_nodes, int transfer_max_wait_t, ArrayList<Float> avg_occ,
                                       int n, float theta, float beta, float gamma, int n_firstV_cands, int n_requests,
-                                      int n_stops, int n_transfers, long start_time, CSVWriter writer, long seed, float delta, float rho) {
+                                      int n_stops, int n_transfers, long start_time, CSVWriter writer, long seed,
+                                      float delta, float rho, float wait_vot) {
         int sum_invehicle_time = 0;
         int sum_waiting_time = 0;
         int sum_veh_active_time = 0;
@@ -1838,7 +1841,7 @@ public class Main {
         System.out.println("Run time: " + run_time + " sec");
         String[] line = {String.valueOf(seed), String.valueOf(simulation_period), String.valueOf(n_requests), String.valueOf(n_vehicles),
                 String.valueOf(n_stops), String.valueOf(n_transfer_nodes), String.valueOf(theta), String.valueOf(beta), String.valueOf(gamma), String.valueOf(delta), String.valueOf(rho),
-                String.valueOf(avg_pax_invehicle_time), String.valueOf(avg_pax_waiting_time), String.valueOf(avg_pax_invehicle_time + 1.4 * avg_pax_waiting_time),
+                String.valueOf(avg_pax_invehicle_time), String.valueOf(avg_pax_waiting_time), String.valueOf(avg_pax_invehicle_time + wait_vot * avg_pax_waiting_time),
                 String.valueOf(sum_veh_idle_time_d), String.valueOf(avg_occupancy), String.valueOf(sum_served_pax),
                 String.valueOf(sum_rejected + sum_pending), String.valueOf(sum_traveled_dist_d), String.valueOf(avg_traveled_dist), String.valueOf(sum_empty_traveled_dist_d), String.valueOf(n_transfers), String.valueOf(run_time)};
 
