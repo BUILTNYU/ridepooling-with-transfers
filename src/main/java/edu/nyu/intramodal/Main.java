@@ -31,6 +31,7 @@ public class Main {
         boolean write_transfer_locations = false;
         boolean write_requests_info = false;
         boolean enable_rebalancing = true;
+        boolean write_realtime_vehicle_locations = true;
 
         //PARAMETERS
         int simulation_period = 24 * 3600; //seconds
@@ -113,6 +114,18 @@ public class Main {
                 CSVWriter writer_occ = new CSVWriter(outputfile_occ);
                 String[] header_occ = {"time", "idle", "occ_0", "occ_1", "occ_2", "occ_3", "occ_4", "occ_5", "occ_6"};
                 writer_occ.writeNext(header_occ);
+
+                //write realtime vehicle locations
+                File file_vl = new File(filename + "_gamma" + gamma + "_v_realtime_locations.csv");
+                FileWriter outputfile_vl = new FileWriter(file_vl);
+                CSVWriter writer_vl = new CSVWriter(outputfile_vl);
+                String[] header_vl = new String[n_veh*2+1];
+                header_vl[0]="time(sec)";
+                for (int g=1; g<header_vl.length/2; g=g+2){
+                    header_vl[g]="V" + g + "_X";
+                    header_vl[g+1] = "V" + g + "_Y";
+                }
+                writer_vl.writeNext(header_vl);
 
                 for (int seed = 0; seed < 1; seed++) {
 
@@ -390,6 +403,15 @@ public class Main {
 //            System.out.println("after assignment");
 //            print_route(vehicles, 9, new ArrayList<>());
 //            System.out.println("cost: " + vehicles.get(9).cost);
+                        if (write_realtime_vehicle_locations) {
+                            String[] line_vl = new String[n_veh*2+1];
+                            line_vl[0] = Integer.toString(t);
+                            for (int g=1; g<line_vl.length; g=g+2){
+                                line_vl[g] = Double.toString(nodes.get(vehicles.get(g).current_loc).x);
+                                line_vl[g+1] = Double.toString(nodes.get(vehicles.get(g).current_loc).y);
+                            }
+                            writer_vl.writeNext(line_vl);
+                        }
                     }
 
                     //one last time update (t is equal to simulation_period here)
@@ -416,7 +438,7 @@ public class Main {
 
                     //requests info output file
                     if (write_requests_info) {
-                        report_requests_info("requests_info.csv", requests);
+                        report_requests_info("requests_info.csv", requests, nodes);
                     }
                 }
 
@@ -427,6 +449,10 @@ public class Main {
                 writer_occ.close();
                 if (write_occupancy_info == false) {
                     file_occ.delete();
+                }
+                writer_vl.close();
+                if (write_realtime_vehicle_locations == false) {
+                    file_vl.delete();
                 }
             }
         writer.close();
@@ -1921,19 +1947,21 @@ public class Main {
         }
     }
 
-    public static void report_requests_info(String filename, HashMap<Integer, Request> requests) throws IOException {
+    public static void report_requests_info(String filename, HashMap<Integer, Request> requests, HashMap<Integer, Node> nodes) throws IOException {
         //requests info output file
         File file_r = new File(filename);
         FileWriter outputfile_r = new FileWriter(file_r);
         CSVWriter writer_r = new CSVWriter(outputfile_r);
-        String[] header_r = {"request_id", "submission_t", "pickup_t", "dropoff_t", "status"};
+        String[] header_r = {"request_id", "submission_t", "pickup_t", "dropoff_t", "status", "pickup_x", "pickup_y", "dropoff_x", "dropoff_y"};
 
         writer_r.writeNext(header_r);
         for (Map.Entry<Integer, Request> r : requests.entrySet()) {
             print_request_info(requests, r.getKey());
             String[] line = {String.valueOf(r.getKey()), String.valueOf(r.getValue().submission_t),
                     String.valueOf(r.getValue().pickup_t), String.valueOf(r.getValue().dropoff_t),
-                    String.valueOf(r.getValue().status)};
+                    String.valueOf(r.getValue().status), String.valueOf(nodes.get(r.getValue().origin).x),
+                    String.valueOf(nodes.get(r.getValue().origin).y), String.valueOf(nodes.get(r.getValue().dest).x),
+                    String.valueOf(nodes.get(r.getValue().dest).y)};
             writer_r.writeNext(line);
         }
         writer_r.close();
